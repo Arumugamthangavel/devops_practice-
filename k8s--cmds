@@ -1,0 +1,604 @@
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh ./get-docker.sh 
+
+sudo systemctl status docker
+sudo systemctl start docker
+sudo systemctl enable docker
+
+sudo usermod -aG docker $USER
+
+sudo -i
+su - ubuntu
+
+#### Pre-requisites: 
+  - ##create a admin role and provide to the ec2-instance  
+  - an EC2 Instance 
+  - Install AWSCLI latest verison 
+  
+```
+sudo apt install unzip -y
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+```
+
+1. Setup kubectl   
+   a. Download kubectl version 1.21  
+   b. Grant execution permissions to kubectl executable   
+   c. Move kubectl onto /usr/local/bin   
+   d. Test that your kubectl installation was successful 
+   
+## kubectl installation steps ##
+
+# https://docs.aws.amazon.com/eks/latest/userguide/install-kubectl.html#linux_amd64_kubectl
+---
+```
+curl -LO "https://dl.k8s.io/release/$(curl -L -s \
+https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+
+chmod +x kubectl
+
+mkdir -p $HOME/bin && cp ./kubectl $HOME/bin/kubectl && export PATH=$HOME/bin:$PATH
+
+kubectl version
+```
+
+# Setup eksctl   
+   a. Download and extract the latest release   
+   b. Move the extracted binary to /usr/local/bin   
+   c. Test that your eksclt installation was successful 
+   
+## https://docs.aws.amazon.com/eks/latest/eksctl/installation.html
+
+```
+# for ARM systems, set ARCH to: `arm64`, `armv6` or `armv7`
+ARCH=amd64
+PLATFORM=windows_$ARCH
+
+curl -sLO "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$PLATFORM.zip"
+
+# (Optional) Verify checksum
+curl -sL "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_checksums.txt" | grep $PLATFORM | sha256sum --check
+
+unzip eksctl_$PLATFORM.zip -d $HOME/bin
+
+rm eksctl_$PLATFORM.zip
+
+eksctl version
+
+```
+
+## to create EKS cluster
+
+```
+eksctl create cluster --name hippo-cluster \
+      --region eu-north-1 \
+      --node-type t3.small
+```      
+```
+### list all the pods
+kubectl get all
+
+### Creates a simple Pod
+kubectl run ekartapp-2 --image=dockerpandian/ekart
+
+###  View resources
+kubectl get all
+kubectl get po
+kubectl describe pod ekartapp
+
+kubectl delete pod/ekartapp
+
+kubectl logs ekartapp
+
+ 
+### Creates Deployment (recommended over Pod)
+kubectl create deployment myekart --image=dockerpandian/ekart
+
+
+kubectl delete deployment.apps/myekart
+
+### Creates a Service to access app
+kubectl expose deployment myekart --port=80 --type=NodePort
+
+### Increase/decrease Pods
+
+kubectl scale deployment myekart --replicas=3  
+
+kubectl delete svc svc1 svc2 svc3
+kubectl delete  svc --all
+kubectl delete svc service/myekart
+
+```
+```
+
+## pod.yml
+```
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ekart
+  labels:
+    app: ekartapp
+spec:
+  containers:
+  - name: ekart-container
+    image: dockerpandian/ekart
+    ports:
+    - name: ekart 
+      containerPort: 8070
+```
+
+
+kubectl apply -f pod.yaml
+
+kubectl get all
+
+kubectl get pod
+
+kubectl get pod -o wide
+
+kubectl delete pod ekart
+
+## service.yaml
+```
+---
+apiVersion : v1
+kind: Service
+metadata:
+ name: ekartsvc
+spec:
+ type: NodePort
+ selector:
+  app: ekartapp
+ ports:
+    - protocol: "TCP"
+      port: 8070 # The port that the service is running on in the cluster
+      targetPort: 8070
+```
+
+kubectl get endpoints ekartsvc   
+
+======================================
+POD & Service in single manifest YML
+=======================================
+
+### 2.yaml
+
+```
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ekart
+  labels:
+    app: ekartapp   # FIXED (match service)
+spec:
+  containers:
+    - name: ekart-container
+      image: dockerpandian/ekart
+      ports:
+        - name: ekart
+          containerPort: 8070
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ekartsvc
+spec:
+  type: NodePort
+  selector:
+    app: ekartapp
+  ports:
+    - protocol: TCP
+      port: 8070
+      targetPort: 8070
+      nodePort: 30007
+```
+kubectl apply -f 2.yaml
+
+kubectl get pods
+
+kubectl get svc
+
+kubectl delete -f 2.yaml
+
+
+===============
+K8S Namespaces
+===============
+```
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ekart-ns
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ekart
+  namespace: ekart-ns   #  Added namespace
+  labels:
+    app: ekartapp
+spec:
+  containers:
+    - name: ekart-container
+      image: dockerpandian/ekart
+      ports:
+        - name: ekart
+          containerPort: 8070
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ekartsvc
+  namespace: ekart-ns   #  Added namespace
+spec:
+  type: NodePort
+  selector:
+    app: ekartapp
+  ports:
+    - protocol: TCP
+      port: 8070
+      targetPort: 8070
+      nodePort: 30007
+```      
+kubectl get ns
+kubectl get ns ekart-ns all      
+kubectl describe ns ekart-ns
+kubectl get pods -n ekart-ns
+kubectl delete all --all -n ekart-ns
+ 
+ 
+===========
+ReplicationController (Outdated)
+===========
+rc.yaml
+
+```
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ekart-ns
+
+---
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: ekart-rc
+  namespace: ekart-ns
+spec:
+  replicas: 3   #  number of pods
+  selector:
+    app: ekartapp 
+  template:
+    metadata:
+      labels:
+        app: ekartapp # Name match
+    spec:
+      containers:
+        - name: ekart-container
+          image: dockerpandian/ekart
+          ports:
+            - containerPort: 8070
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ekartsvc
+  namespace: ekart-ns
+spec:
+  type: NodePort
+  selector:
+    app: ekartapp   # Name match
+  ports:
+    - protocol: TCP
+      port: 8070
+      targetPort: 8070
+      nodePort: 30007
+```
+
+kubectl get -n ekart-ns all
+
+kubectl get pod -n ekart-ns
+
+kubectl get -n ekart-ns rc 
+
+kubectl describe rc ekart-rc -n ekart-ns
+
+kubectl get rc -n ekart-ns -o wide
+ 
+kubectl get rc ekart-rc -o yaml -n ekart-ns
+
+kubectl get pods -n ekart-ns --show-labels
+
+kubectl scale rc ekart-rc --replicas=5 -n ekart-ns
+
+kubectl delete pod ekart-rc-42mjk -n ekart-ns
+
+kubectl get pods -n ekart-ns
+
+kubectl describe rc ekart-rc -n ekart-ns
+
+kubectl delete rc ekart-rc -n ekart-ns
+
+===========
+ReplicaSet
+===========
+rs.yaml
+
+```
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ekart-ns
+
+---
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: ekart-rs
+  namespace: ekart-ns
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ekartapp   # MUST match pod labels
+  template:
+    metadata:
+      labels:
+        app: ekartapp   # MUST match pod labels
+    spec:
+      containers:
+        - name: ekart-container
+          image: dockerpandian/ekart
+          ports:
+            - containerPort: 8070
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ekartsvc
+  namespace: ekart-ns
+spec:
+  type: NodePort
+  selector:
+    app: ekartapp   # MUST match pod labels
+  ports:
+    - protocol: TCP
+      port: 8070
+      targetPort: 8070
+      nodePort: 30007
+```      
+kubectl get ns
+
+kubectl get rs -n ekart-ns
+
+kubectl get svc -n ekart-ns
+
+kubectl scale rs ekart-rs --replicas=5 -n ekart-ns
+
+kubectl delete -f rs.yaml
+ 
+================
+K8S Deployment
+================
+ d-zd.yaml
+ 
+```
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ekart-ns
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ekart-deploy
+  namespace: ekart-ns
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: ekartapp
+  template:
+    metadata:
+      labels:
+        app: ekartapp
+    spec:
+      containers:
+        - name: ekart-container
+          image: dockerpandian/ekart:latest
+          ports:
+            - containerPort: 8070
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ekartsvc
+  namespace: ekart-ns
+spec:
+  type: NodePort
+  selector:
+    app: ekartapp
+  ports:
+    - protocol: TCP
+      port: 8070
+      targetPort: 8070
+      nodePort: 30007
+```
+kubectl apply -f z-dy.yaml
+
+kubectl get deploy -n ekart-ns
+
+kubectl describe deploy ekart-deploy -n ekart-ns
+
+kubectl get deploy ekart-deploy -o yaml -n ekart-ns
+
+kubectl get deploy -n ekart-ns -o wide
+
+kubectl scale deployment ekart-deploy --replicas=5 -n ekart-ns
+
+kubectl set image deployment/ekart-deploy ekart-container=dockerpandian/ekart:v2 -n ekart-ns
+
+kubectl rollout status deployment ekart-deploy -n ekart-ns
+
+kubectl rollout history deployment ekart-deploy -n ekart-ns
+
+kubectl rollout undo deployment ekart-deploy -n ekart-ns
+
+kubectl rollout pause deployment ekart-deploy -n ekart-ns
+
+kubectl rollout resume deployment ekart-deploy -n ekart-ns
+
+kubectl edit deployment ekart-deploy -n ekart-ns
+
+kubectl delete deployment ekart-deploy -n ekart-ns
+
+kubectl get all -n ekart-ns
+
+```
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ekart-ns
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ekart-deploy
+  namespace: ekart-ns
+spec:
+  replicas: 3
+  strategy:
+    type: Recreate   # ✅ changed here
+  selector:
+    matchLabels:
+      app: ekartapp
+  template:
+    metadata:
+      labels:
+        app: ekartapp
+    spec:
+      containers:
+        - name: ekart-container
+          image: dockerpandian/httpd:a29
+          ports:
+            - containerPort: 80
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ekartsvc
+  namespace: ekart-ns
+spec:
+  type: NodePort
+  selector:
+    app: ekartapp
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+      nodePort: 30007
+```
+====================
+Blue gree deployment
+====================
+```
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ekart-ns
+
+# 🔵 BLUE DEPLOYMENT (v1 - current live)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ekart-blue
+  namespace: ekart-ns
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ekartapp
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: ekartapp
+        version: v1
+    spec:
+      containers:
+        - name: httpd-container
+          image: dockerpandian/httpd:2
+          ports:
+            - containerPort: 80
+
+# 🟢 GREEN DEPLOYMENT (v2 - new version)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ekart-green
+  namespace: ekart-ns
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ekartapp
+      version: v2
+  template:
+    metadata:
+      labels:
+        app: ekartapp
+        version: v2
+    spec:
+      containers:
+        - name: httpd-container
+          image: dockerpandian/httpd:1
+          ports:
+            - containerPort: 80
+
+# 🌐 LOADBALANCER SERVICE (Initially pointing to BLUE)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ekart-lb
+  namespace: ekart-ns
+spec:
+  type: LoadBalancer
+  selector:
+    app: ekartapp
+    version: v1   # 🔵 initially pointing to BLUE
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+      
+```
+### to delete the cluster
+
+eksctl delete cluster hippo-cluster --region eu-north-1   
