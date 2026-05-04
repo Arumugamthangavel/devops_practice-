@@ -6,6 +6,9 @@ sudo service ssh restart
 sudo visudo
 ansible ALL=(ALL:ALL) NOPASSWD: ALL
 
+sudo vi /etc/hostname
+ansible-ct
+
 su - ansible
 
 
