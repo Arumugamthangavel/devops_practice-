@@ -77,6 +77,10 @@ ubuntu
 al
 
 
+[node:vars]
+ansible_user=ansible
+
+
 ----------------------------------
 TO PING
 ansible -m ping all
